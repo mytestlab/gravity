@@ -22,6 +22,8 @@
 #endif
 #if defined(_WIN32)
 #include <windows.h>
+#include <Shlwapi.h>
+#include <string.h>
 #endif
 
 #include "gravity_utils.h"
@@ -35,8 +37,8 @@ nanotime_t nanotime (void) {
 	nanotime_t value;
 	
 	#if defined(_WIN32)
-	static LARGE_INTEGER	win_frequency;
-	static BOOL				flag = QueryPerformanceFrequency(&s_frequency);
+	LARGE_INTEGER	win_frequency;
+	if (!QueryPerformanceFrequency(&win_frequency)) return 0;
 	LARGE_INTEGER			t;
 	
 	if (!QueryPerformanceCounter(&t)) return 0;
@@ -172,7 +174,11 @@ const char *file_buildpath (const char *filename, const char *dirpath) {
 }
 
 bool file_write (const char *path, const char *buffer, size_t len) {
+#ifdef WIN32
+	mode_t mode = S_IRUSR | S_IWUSR;
+#else
 	mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH; // RW for owner, R for group, R for others
+#endif
 	int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
 	if (fd < 0) return false;
 	
@@ -203,16 +209,12 @@ bool is_directory (const char *path) {
 
 DIRREF directory_init (const char *dirpath) {
 	#ifdef WIN32
-	WIN32_FIND_DATA findData;
-	WCHAR			path[MAX_PATH];
-	WCHAR			dirpathW[MAX_PATH];
+	WIN32_FIND_DATAA findData;
+	CHAR			path[MAX_PATH];
 	HANDLE			hFind;
-	
-	// convert dirpath to dirpathW
-	MultiByteToWideChar(CP_UTF8, 0, dirpath, -1, dirpathW, MAX_PATH);
-	
+
 	// in this way I can be sure that the first file returned (and lost) is .
-	PathCombine(path, dirpathW, _T("*"));
+	PathCombineA(path, dirpath, "*");
 	
 	// if the path points to a symbolic link, the WIN32_FIND_DATA buffer contains
 	// information about the symbolic link, not the target
@@ -229,7 +231,7 @@ const char *directory_read (DIRREF ref) {
 		#ifdef WIN32
 		WIN32_FIND_DATA findData;
 		if (FindNextFile(ref, &findData) == 0) {
-			FindClose(dref);
+			FindClose(ref);
 			return NULL;
 		}
 		if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
